@@ -4,7 +4,14 @@ Lutris
 
 |LiberaPayBadge|_
 
+This fork of Lutris has Discord Rich Presence integration, it displays the current game you are running and the runner
 
+Example:
+
+.. image:: rich-presence.jpg
+   :width: 40pt
+
+TODO: upload the game and runner icon automatically with the use of user tokens
 
 Lutris is an open source gaming platform that makes gaming on Linux easier by
 managing, installing and providing optimal settings for games.

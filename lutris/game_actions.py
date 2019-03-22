@@ -1,6 +1,8 @@
 """Handle game specific actions"""
 import os
 import signal
+import time
+import calendar
 from gi.repository import Gio
 from lutris.command import MonitoredCommand
 from lutris.game import Game
@@ -14,6 +16,7 @@ from lutris.gui.dialogs.log import LogWindow
 from lutris.util.system import path_exists
 from lutris.util.log import logger
 from lutris.util import xdgshortcuts
+from lutris import ipc
 
 
 class GameActions:
@@ -23,6 +26,9 @@ class GameActions:
         self.window = window
         self.game_id = None
         self._game = None
+        self.rpcclient = ipc.DiscordIPC('558752714079731714')
+        self.rpcclient.connect()
+        self.rpcclient.update_activity({})
 
     @property
     def game(self):
@@ -153,7 +159,20 @@ class GameActions:
 
     def on_game_run(self, *_args):
         """Launch a game"""
+        activity = {
+            #'details': 'Details',
+            'state': 'Playing {0}'.format(self.game.name),
+            'timestamps': {'start': calendar.timegm(time.gmtime())},
+            'assets': {
+                'small_image': self.game.runner_name.lower().replace(' ', '-'),
+                'small_text': self.game.runner_name,
+                'large_image': self.game.name.lower().replace(' ', '-'),
+                'large_text': self.game.name
+                }
+            }
+        self.rpcclient.update_activity(activity)
         self.application.launch(self.game)
+
 
     def get_running_game(self):
         for i in range(self.application.running_games.get_n_items()):
@@ -164,6 +183,7 @@ class GameActions:
     def on_stop(self, caller):
         """Stops the game"""
 
+        self.rpcclient.update_activity({})
         matched_game = self.get_running_game()
         if not matched_game:
             logger.warning("%s not in running game list", self.game_id)
