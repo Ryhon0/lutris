@@ -65,6 +65,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
     sync_spinner = GtkTemplate.Child()
     add_popover = GtkTemplate.Child()
     viewtype_icon = GtkTemplate.Child()
+    website_search_toggle = GtkTemplate.Child()
 
     def __init__(self, application, **kwargs):
         width = int(settings.read_setting("width") or self.default_width)
@@ -94,13 +95,13 @@ class LutrisWindow(Gtk.ApplicationWindow):
         self.game_actions = GameActions(application=application, window=self)
 
         self.search_terms = None
+        self.search_timer_id = None
+        self.search_mode = "local"
         self.game_store = self.get_store()
         self.view = self.get_view(view_type)
 
         GObject.add_emission_hook(Game, "game-updated", self.on_game_updated)
         GObject.add_emission_hook(Game, "game-removed", self.on_game_updated)
-        GObject.add_emission_hook(Game, "game-installed", self.on_game_installed)
-        GObject.add_emission_hook(GenericPanel, "game-searched", self.on_game_searched)
         GObject.add_emission_hook(GenericPanel,
                                   "running-game-selected",
                                   self.game_selection_changed)
@@ -119,6 +120,11 @@ class LutrisWindow(Gtk.ApplicationWindow):
         self.set_viewtype_icon(view_type)
 
         # Add additional widgets
+        lutris_icon = Gtk.Image.new_from_icon_name("lutris", Gtk.IconSize.MENU)
+        lutris_icon.set_margin_right(3)
+        self.website_search_toggle.set_image(lutris_icon)
+        self.website_search_toggle.set_label("Search Lutris.net")
+        self.website_search_toggle.set_tooltip_text("Search Lutris.net")
         self.sidebar_listbox = SidebarListBox()
         self.sidebar_listbox.set_size_request(250, -1)
         self.sidebar_listbox.connect("selected-rows-changed", self.on_sidebar_changed)
@@ -209,15 +215,15 @@ class LutrisWindow(Gtk.ApplicationWindow):
             "use-dark-theme": Action(
                 self.on_dark_theme_state_change, type="b", default=self.use_dark_theme
             ),
-            "show-tray-icon": Action(
-                self.on_tray_icon_toggle, type="b", default=self.show_tray_icon
-            ),
             "show-side-bar": Action(
                 self.on_sidebar_state_change,
                 type="b",
                 default=self.sidebar_visible,
                 accel="F9",
             ),
+            "open-forums": Action(lambda *x: open_uri("https://forums.lutris.net/")),
+            "open-discord": Action(lambda *x: open_uri("https://discord.gg/Pnt5CuY")),
+            "donate": Action(lambda *x: open_uri("https://lutris.net/donate")),
         }
 
         self.actions = {}
@@ -266,10 +272,6 @@ class LutrisWindow(Gtk.ApplicationWindow):
     @property
     def show_installed_first(self):
         return settings.read_setting("show_installed_first") == "true"
-
-    @property
-    def show_tray_icon(self):
-        return settings.read_setting("show_tray_icon", default="false").lower() == "true"
 
     @property
     def view_sorting(self):
@@ -403,7 +405,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
         if event.keyval == Gdk.KEY_Escape:
             self.search_toggle.set_active(False)
             return Gdk.EVENT_STOP
-        return Gtk.ApplicationWindow.do_key_press_event(self, event)
+        # return Gtk.ApplicationWindow.do_key_press_event(self, event)
 
         # XXX: This block of code below is to enable searching on type.
         # Enabling this feature steals focus from other entries so it needs
@@ -411,19 +413,19 @@ class LutrisWindow(Gtk.ApplicationWindow):
 
         # Probably not ideal for non-english, but we want to limit
         # which keys actually start searching
-        # if (
-        #     not Gdk.KEY_0 <= event.keyval <= Gdk.KEY_z
-        #     or event.state & Gdk.ModifierType.CONTROL_MASK
-        #     or event.state & Gdk.ModifierType.SHIFT_MASK
-        #     or event.state & Gdk.ModifierType.META_MASK
-        #     or event.state & Gdk.ModifierType.MOD1_MASK
-        #     or self.search_entry.has_focus()
-        # ):
-        #     return Gtk.ApplicationWindow.do_key_press_event(self, event)
+        if (
+            not Gdk.KEY_0 <= event.keyval <= Gdk.KEY_z
+            or event.state & Gdk.ModifierType.CONTROL_MASK
+            or event.state & Gdk.ModifierType.SHIFT_MASK
+            or event.state & Gdk.ModifierType.META_MASK
+            or event.state & Gdk.ModifierType.MOD1_MASK
+            or self.search_entry.has_focus()
+        ):
+            return Gtk.ApplicationWindow.do_key_press_event(self, event)
 
-        # self.search_toggle.set_active(True)
-        # self.search_entry.grab_focus()
-        # return self.search_entry.do_key_press_event(self.search_entry, event)
+        self.search_toggle.set_active(True)
+        self.search_entry.grab_focus()
+        return self.search_entry.do_key_press_event(self.search_entry, event)
 
     def load_icon_type_from_settings(self, view_type):
         """Return the icon style depending on the type of view."""
@@ -635,19 +637,44 @@ class LutrisWindow(Gtk.ApplicationWindow):
         self.invalidate_game_filter()
 
     @GtkTemplate.Callback
-    def on_search_entry_changed(self, widget):
+    def on_search_entry_changed(self, entry):
         """Callback for the search input keypresses"""
-        self.game_store.filter_text = widget.get_text()
-        self.invalidate_game_filter()
+        if self.search_mode == "local":
+            self.game_store.filter_text = entry.get_text()
+            self.invalidate_game_filter()
+        elif self.search_mode == "website":
+            if self.search_timer_id:
+                GLib.source_remove(self.search_timer_id)
+            self.search_timer_id = GLib.timeout_add(
+                750, self.on_search_games_fire, entry.get_text().lower().strip()
+            )
+        else:
+            raise ValueError("Unsupported search mode %s" % self.search_mode)
 
     @GtkTemplate.Callback
     def on_search_toggle(self, button):
+        """Called when search bar is shown / hidden"""
         active = button.props.active
         self.search_revealer.set_reveal_child(active)
-        if not active:
-            self.search_entry.props.text = ""
-        else:
+        if active:
             self.search_entry.grab_focus()
+        else:
+            self.search_entry.props.text = ""
+
+    @GtkTemplate.Callback
+    def on_website_search_toggle_toggled(self, toggle_button):
+        self.search_terms = self.search_entry.props.text
+        if toggle_button.props.active:
+            self.search_mode = "website"
+            self.search_entry.set_placeholder_text("Search Lutris.net")
+            self.search_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "folder-download-symbolic")
+            self.game_store.search_mode = True
+            self.search_games(self.search_terms)
+        else:
+            self.search_mode = "local"
+            self.search_entry.set_placeholder_text("Filter the list of games")
+            self.search_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
+            self.search_games("")
 
     @GtkTemplate.Callback
     def on_about_clicked(self, *_args):
@@ -661,7 +688,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
 
     def on_game_updated(self, game):
         """Callback to refresh the view when a game is updated"""
-        # logger.debug("Updating game %s", game)
+        logger.debug("Updating game %s", game)
         game.load_config()
         try:
             self.game_store.update_game_by_id(game.id)
@@ -670,20 +697,25 @@ class LutrisWindow(Gtk.ApplicationWindow):
 
         self.view.set_selected_game(game.id)
         self.game_selection_changed(None, game)
-        self.sidebar_listbox.update()
         return True
 
-    def on_game_searched(self, panel, query):
-        """Called when the game-searched event is emitted"""
-        # logger.info("Searching for :%s" % query)
+    def on_search_games_fire(self, value):
+        GLib.source_remove(self.search_timer_id)
+        self.search_timer_id = None
+        self.search_games(value)
+        return False
+
+    def search_games(self, query):
+        """Search for games from the website API"""
+        logger.debug("%s search for :%s", self.search_mode, query)
         self.search_terms = query
         self.view.destroy()
         self.game_store = self.get_store(api.search_games(query) if query else None)
         self.game_store.set_icon_type(self.icon_type)
         self.game_store.load(from_search=bool(query))
+        self.game_store.filter_text = self.search_entry.props.text
         self.switch_view(self.get_view_type())
         self.invalidate_game_filter()
-        return True
 
     def game_selection_changed(self, _widget, game):
         """Callback to handle the selection of a game in the view"""
@@ -693,10 +725,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
             child.destroy()
 
         if not game:
-            self.game_panel = GenericPanel(
-                search_terms=self.search_terms,
-                application=self.application
-            )
+            self.game_panel = GenericPanel(application=self.application)
         else:
             self.game_actions.set_game(game=game)
             self.game_panel = GamePanel(self.game_actions)
@@ -706,11 +735,6 @@ class LutrisWindow(Gtk.ApplicationWindow):
 
     def on_panel_closed(self, panel):
         self.game_selection_changed(panel, None)
-
-    def on_game_installed(self, game):
-        """Callback to handle newly installed games"""
-        self.game_store.add_or_update(game.id)
-        self.game_selection_changed(None, game)
 
     def update_game(self, slug):
         for pga_game in pga.get_games_where(slug=slug):
@@ -783,12 +807,6 @@ class LutrisWindow(Gtk.ApplicationWindow):
             self.set_selected_filter(row.id, None)
         else:
             self.set_selected_filter(None, row.id)
-
-    def on_tray_icon_toggle(self, action, value):
-        """Callback for handling tray icon toggle"""
-        action.set_state(value)
-        settings.write_setting("show_tray_icon", value)
-        self.application.set_tray_icon()
 
     def set_selected_filter(self, runner, platform):
         """Filter the view to a given runner and platform"""

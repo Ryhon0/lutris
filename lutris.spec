@@ -6,7 +6,7 @@
 %global appid net.lutris.Lutris
 
 Name:           lutris
-Version:        0.5.0.1
+Version:        0.5.1
 Release:        7%{?dist}
 Summary:        Install and play any video game easily
 
@@ -120,13 +120,15 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/%{appid}.desktop
 %{_bindir}/%{name}
 %{_bindir}/lutris-wrapper
 %{_datadir}/%{name}/
-%{_datadir}/appdata/%{appid}.appdata.xml
+%{_datadir}/metainfo/%{appid}.appdata.xml
 %{_datadir}/applications/%{appid}.desktop
 %{_datadir}/icons/hicolor/16x16/apps/lutris.png
 %{_datadir}/icons/hicolor/22x22/apps/lutris.png
 %{_datadir}/icons/hicolor/24x24/apps/lutris.png
 %{_datadir}/icons/hicolor/32x32/apps/lutris.png
 %{_datadir}/icons/hicolor/48x48/apps/lutris.png
+%{_datadir}/icons/hicolor/64x64/apps/lutris.png
+%{_datadir}/icons/hicolor/128x128/apps/lutris.png
 %{_datadir}/icons/hicolor/scalable/apps/lutris.svg
 %{_datadir}/polkit-1/actions/*
 %{python3_sitelib}/%{name}-*.egg-info

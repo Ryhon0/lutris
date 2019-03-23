@@ -34,6 +34,7 @@ from lutris import pga
 from lutris.game import Game
 from lutris import settings
 from lutris.gui.dialogs import ErrorDialog, InstallOrPlayDialog
+from lutris.gui.dialogs.issue import IssueReportWindow
 from lutris.gui.installerwindow import InstallerWindow
 from lutris.migrations import migrate
 from lutris.command import exec_command
@@ -44,11 +45,10 @@ from lutris.util import log
 from lutris.util.jobs import AsyncCall
 from lutris.util.log import logger
 from lutris.api import parse_installer_url
-from lutris.startup import run_all_checks
+from lutris.startup import init_lutris, run_all_checks
 from lutris.util.wine.dxvk import init_dxvk_versions
 
 from .lutriswindow import LutrisWindow
-from lutris.gui.widgets.tray import LutrisTray
 
 
 class Application(Gtk.Application):
@@ -57,6 +57,7 @@ class Application(Gtk.Application):
             application_id="net.lutris.Lutris",
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
+        init_lutris()
         gettext.bindtextdomain("lutris", "/usr/share/locale")
         gettext.textdomain("lutris")
 
@@ -140,6 +141,10 @@ class Application(Gtk.Application):
             _("Reinstall game"), None,
         )
         self.add_main_option(
+            "submit-issue", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
+            _("Submit an issue"), None
+        )
+        self.add_main_option(
             GLib.OPTION_REMAINING, 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING_ARRAY,
             _("uri to open"), "URI",
         )
@@ -162,14 +167,6 @@ class Application(Gtk.Application):
         menubar = builder.get_object("menubar")
         self.set_menubar(menubar)
 
-    def set_tray_icon(self):
-        """Creates or destroys a tray icon for the application"""
-        active = settings.read_setting("show_tray_icon", default="false") == "true"
-        if active and not self.tray:
-            self.tray = LutrisTray(application=self)
-        if self.tray:
-            self.tray.set_visible(active)
-
     def do_activate(self):
         if not self.window:
             self.window = LutrisWindow(application=self)
@@ -177,7 +174,7 @@ class Application(Gtk.Application):
             Gtk.StyleContext.add_provider_for_screen(
                 screen, self.css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
-        self.window.present()
+        self.window.present()  # EXPLAIN YOURSELF BEFORE MESSING WITH THAT LINE
 
     @staticmethod
     def _print(command_line, string):
@@ -249,6 +246,10 @@ class Application(Gtk.Application):
             self.execute_command(command)
             return 0
 
+        elif options.contains("submit-issue"):
+            IssueReportWindow(application=self)
+            return 0
+
         try:
             url = options.lookup_value(GLib.OPTION_REMAINING)
             installer_info = self.get_lutris_action(url)
@@ -270,7 +271,6 @@ class Application(Gtk.Application):
 
         # Graphical commands
         self.activate()
-        self.set_tray_icon()
 
         db_game = None
         if game_slug:
@@ -320,6 +320,8 @@ class Application(Gtk.Application):
         elif action in ("rungame", "rungameid"):
             if not db_game or not db_game["id"]:
                 logger.warning("No game found in library")
+                if not self.window.is_visible():
+                    self.do_shutdown()
                 return 0
 
             logger.info("Launching %s", db_game["name"])
@@ -368,7 +370,7 @@ class Application(Gtk.Application):
             url = url.get_strv()
 
         if url:
-            url = url[0]  # TODO: Support multiple
+            url = url[0]
             installer_info = parse_installer_url(url)
             if installer_info is False:
                 raise ValueError

@@ -4,12 +4,13 @@ import os
 from gi.repository import Gtk, Pango, GLib
 from lutris.game import Game
 from lutris.config import LutrisConfig, make_game_config_id
+from lutris.util.log import logger
 from lutris import runners
 from lutris import settings
 from lutris.cache import get_cache_path, save_cache_path
 from lutris.gui.widgets.common import VBox, SlugEntry, NumberEntry, Label, FileChooserEntry
 from lutris.gui.config.boxes import GameBox, RunnerBox, SystemBox
-from lutris.gui.dialogs import ErrorDialog
+from lutris.gui.dialogs import ErrorDialog, QuestionDialog
 from lutris.gui.widgets.utils import (
     get_pixbuf_for_game,
     get_pixbuf,
@@ -45,6 +46,7 @@ class GameDialogCommon:
         self.system_box = None
         self.system_sw = None
         self.runner_name = None
+        self.runner_index = None
         self.lutris_config = None
 
     @staticmethod
@@ -247,7 +249,8 @@ class GameDialogCommon:
                 if self.runner_name == str(runner[1]):
                     break
                 runner_index += 1
-        runner_dropdown.set_active(runner_index)
+        self.runner_index = runner_index
+        runner_dropdown.set_active(self.runner_index)
         runner_dropdown.connect("changed", self.on_runner_changed)
         cell = Gtk.CellRendererText()
         cell.props.ellipsize = Pango.EllipsizeMode.END
@@ -321,6 +324,8 @@ class GameDialogCommon:
         self._add_notebook_tab(runner_sw, "Runner options")
 
     def _build_system_tab(self, _config_level):
+        if not self.lutris_config:
+            raise RuntimeError("Lutris config not loaded yet")
         self.system_box = SystemBox(self.lutris_config)
         self.system_sw = self.build_scrolled_window(self.system_box)
         self._add_notebook_tab(self.system_sw, "System options")
@@ -373,19 +378,39 @@ class GameDialogCommon:
 
     def on_runner_changed(self, widget):
         """Action called when runner drop down is changed."""
-        runner_index = widget.get_active()
-        current_page = self.notebook.get_current_page()
+        new_runner_index = widget.get_active()
+        if self.runner_index and new_runner_index != self.runner_index:
+            dlg = QuestionDialog(
+                {
+                    "question": "Are you sure you want to change the runner for this game ? "
+                                "This will reset the full configuration for this game and "
+                                "is not reversible.",
+                    "title": "Confirm runner change",
+                }
+            )
 
-        if runner_index == 0:
+            if dlg.result == Gtk.ResponseType.YES:
+                self.runner_index = new_runner_index
+                self._switch_runner(widget)
+            else:
+                # Revert the dropdown menu to the previously selected runner
+                widget.set_active(self.runner_index)
+        else:
+            self.runner_index = new_runner_index
+            self._switch_runner(widget)
+
+    def _switch_runner(self, widget):
+        """Rebuilds the UI on runner change"""
+        current_page = self.notebook.get_current_page()
+        if self.runner_index == 0:
             self.runner_name = None
             self.lutris_config = None
         else:
-            self.runner_name = widget.get_model()[runner_index][1]
+            self.runner_name = widget.get_model()[self.runner_index][1]
             self.lutris_config = LutrisConfig(
                 runner_slug=self.runner_name,
                 level="game"
             )
-
         self._rebuild_tabs()
         self.notebook.set_current_page(current_page)
 
@@ -421,6 +446,7 @@ class GameDialogCommon:
     def on_save(self, _button):
         """Save game info and destroy widget. Return True if success."""
         if not self.is_valid():
+            logger.warning("Current configuration is not valid, ignoring save request")
             return False
         name = self.name_entry.get_text()
 
@@ -440,19 +466,17 @@ class GameDialogCommon:
         runner_class = runners.import_runner(self.runner_name)
         runner = runner_class(self.lutris_config)
 
-        self.game.runner_name = self.runner_name
-
         self.game.name = name
         self.game.slug = self.slug
         self.game.year = year
         self.game.game_config_id = self.lutris_config.game_config_id
+        self.game.runner = runner
         self.game.runner_name = self.runner_name
         self.game.directory = runner.game_path
         self.game.is_installed = True
         if self.runner_name in ("steam", "winesteam"):
             self.game.steamid = self.lutris_config.game_config["appid"]
 
-        self.game.set_platform_from_runner()
         self.game.config = self.lutris_config
         self.game.save()
         self.destroy()

@@ -2,9 +2,12 @@
 import os
 import shutil
 import sys
+import json
 import platform
 import resource
+import subprocess
 from collections import defaultdict
+from lutris.vendor.distro import linux_distribution
 from lutris.util.graphics import drivers
 from lutris.util.graphics import glxinfo
 from lutris.util.log import logger
@@ -140,6 +143,50 @@ class LinuxSystem:
         return self.hard_limit >= self.recommended_no_file_open
 
     @staticmethod
+    def get_cpus():
+        """Parse the output of /proc/cpuinfo"""
+        cpus = [{}]
+        cpu_index = 0
+        with open("/proc/cpuinfo") as cpuinfo:
+            for line in cpuinfo.readlines():
+                if not line.strip():
+                    cpu_index += 1
+                    cpus.append({})
+                    continue
+                key, value = line.split(":", 1)
+                cpus[cpu_index][key.strip()] = value.strip()
+        return [cpu for cpu in cpus if cpu]
+
+    @staticmethod
+    def get_drives():
+        """Return a list of drives with their filesystems"""
+        try:
+            output = subprocess.check_output(["lsblk", "-f", "--json"]).decode()
+        except subprocess.CalledProcessError as ex:
+            logger.error("Failed to get drive information: %s", ex)
+            return None
+        return [drive for drive in json.loads(output)["blockdevices"] if drive["fstype"] != "squashfs"]
+
+    @staticmethod
+    def get_ram_info():
+        """Return RAM information"""
+        try:
+            output = subprocess.check_output(["free"]).decode().split("\n")
+        except subprocess.CalledProcessError as ex:
+            logger.error("Failed to get RAM information: %s", ex)
+            return None
+        columns = output[0].split()
+        meminfo = {}
+        for parts in [line.split() for line in output[1:] if line]:
+            meminfo[parts[0].strip(":").lower()] = dict(zip(columns, parts[1:]))
+        return meminfo
+
+    @staticmethod
+    def get_dist_info():
+        """Return distribution information"""
+        return linux_distribution()
+
+    @staticmethod
     def get_arch():
         """Return the system architecture only if compatible
         with the supported architectures from the Lutris API
@@ -222,7 +269,7 @@ class LinuxSystem:
         """Return a list of sets of missing libraries for each supported architecture"""
         required_libs = set(SYSTEM_COMPONENTS["LIBRARIES"][req])
         return [
-            required_libs - set(self._cache["LIBRARIES"][arch][req])
+            list(required_libs - set(self._cache["LIBRARIES"][arch][req]))
             for arch in self.runtime_architectures
         ]
 

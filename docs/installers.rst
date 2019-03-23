@@ -149,6 +149,15 @@ add-on "The reckoning" for Quake 2, you should add: ``requires: quake-2``
 You can also add complex requirements following the same syntax as the
 ``require-binaries`` directive described above.
 
+Accessing the current display mode
+----------------------------------
+
+It is often useful to have access to the current screen resolution to set
+launch parameters or write config files. You can access those in scripts with
+the `$RESOLUTION`, `$RESOLUTION_WIDTH` and `$RESOLUTION_HEIGHT` variables.
+
+Note that it is not necessary to specify the resolution for Wine virtual
+desktop as Lutris will automatically set it to the current one.
 
 Writing the installation script
 ===============================
@@ -235,9 +244,9 @@ Extracting archives
 -------------------
 
 Extracting archives is done with the ``extract`` directive, the ``file``
-argument is a ``file id`` or a file path. If the archive should be extracted
-in some other location than the ``$GAMEDIR``, you can specify a ``dst``
-argument.
+argument is a ``file id`` or a file path with optional wildcards. If the archive(s)
+should be extracted in some other location than the ``$GAMEDIR``, you can specify a
+``dst`` argument.
 
 You can optionally specify the archive's type with the ``format`` option.
 This is useful if the archive's file extension does not match what it should
