@@ -306,6 +306,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
             """Callback to update the view on sync complete"""
             if errors:
                 logger.error("Sync failed: %s", errors)
+                return
             added_games, removed_games = response
 
             for game_id in added_games:
@@ -667,13 +668,19 @@ class LutrisWindow(Gtk.ApplicationWindow):
         if toggle_button.props.active:
             self.search_mode = "website"
             self.search_entry.set_placeholder_text("Search Lutris.net")
-            self.search_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "folder-download-symbolic")
+            self.search_entry.set_icon_from_icon_name(
+                Gtk.EntryIconPosition.PRIMARY,
+                "folder-download-symbolic"
+            )
             self.game_store.search_mode = True
             self.search_games(self.search_terms)
         else:
             self.search_mode = "local"
             self.search_entry.set_placeholder_text("Filter the list of games")
-            self.search_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
+            self.search_entry.set_icon_from_icon_name(
+                Gtk.EntryIconPosition.PRIMARY,
+                "system-search-symbolic"
+            )
             self.search_games("")
 
     @GtkTemplate.Callback

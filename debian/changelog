@@ -1,3 +1,52 @@
+lutris (0.5.2.1) cosmic; urgency=high
+
+  * Handle distributions where ldconfig is not in $PATH, like Debian
+  * Fix a crash when GOG credential have changed
+  * Leave "Show logs" button always enabled
+  * Add BlastEm to libretro cores
+
+ -- Mathieu Comandon <strycore@gmail.com>  Tue, 09 Apr 2019 19:46:02 -0700
+
+lutris (0.5.2) cosmic; urgency=medium
+
+  * Avoid a crash if the lutris config file is corrupted
+  * Install Asian fonts by default on Wine prefix creation
+  * Add Vulkan ICD loaders in system options
+  * Add SampleCount option to Wine (allows enabling antialiasing in old games)
+  * Replace joystick panel with Wine config panel (which contains the joypad panel)
+  * Display warning when installing games on NTFS drives
+  * Display warning if Vulkan is not fully installed
+  * Use ldconfig to determine library paths
+  * Disable steamwebhelper in Wine Steam to prevent spamming logs with errors
+  * Various bug fixes
+
+ -- Mathieu Comandon <strycore@gmail.com>  Thu, 04 Apr 2019 02:47:30 -0700
+
+lutris (0.5.1.3) cosmic; urgency=critical
+
+  * Fake release to work around Launchpad / OBS publishing issues.
+
+ -- Mathieu Comandon <strycore@gmail.com>  Mon, 25 Mar 2019 17:38:55 -0700
+
+lutris (0.5.1.2) cosmic; urgency=high
+
+  * Fix issue with custom Proton detection preventing Wine game from running
+
+ -- Mathieu Comandon <strycore@gmail.com>  Mon, 25 Mar 2019 14:24:38 -0700
+
+lutris (0.5.1.1) cosmic; urgency=medium
+
+  * Fixed a crash when trying to open webpages on system without GVFS
+    installed
+  * Fixed GOG login dialog being displayed multiple times during the install
+  * Add mesa-utils as dependency for glxinfo
+  * Add gvfs-backends as dependency to fix the open_uri issue
+  * Add detection of custom proton builds in compatibilitytools.d folder, as
+    documented here: https://github.com/valvesoftware/proton#install-proton-locally
+   (by @GloriousEggroll)
+
+ -- Mathieu Comandon <strycore@gmail.com>  Sun, 24 Mar 2019 23:39:18 -0700
+
 lutris (0.5.1) cosmic; urgency=medium
 
   * Download the default Lutris Wine version when not available

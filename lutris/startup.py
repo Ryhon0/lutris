@@ -9,7 +9,6 @@ from lutris.util.system import create_folder
 from lutris.util.graphics import drivers
 from lutris.util.graphics import vkquery
 from lutris.util.linux import LINUX_SYSTEM
-from lutris.gui.widgets.utils import open_uri
 from lutris.gui.dialogs import DontShowAgainDialog
 
 
@@ -57,7 +56,7 @@ def check_driver():
         for gpu_id in gpus:
             gpu_info = drivers.get_nvidia_gpu_info(gpu_id)
             logger.info("GPU: %s", gpu_info.get("Model"))
-    elif hasattr(LINUX_SYSTEM, "glxinfo"):
+    elif LINUX_SYSTEM.glxinfo:
         logger.info("Using %s", LINUX_SYSTEM.glxinfo.opengl_vendor)
         if hasattr(LINUX_SYSTEM.glxinfo, "GLX_MESA_query_renderer"):
             logger.info(
@@ -101,10 +100,27 @@ def check_libs(all_components=False):
         components = LINUX_SYSTEM.requirements
     else:
         components = LINUX_SYSTEM.critical_requirements
+    missing_vulkan_libs = []
     for req in components:
         for index, arch in enumerate(LINUX_SYSTEM.runtime_architectures):
             for lib in missing_libs[req][index]:
+                if req == "VULKAN":
+                    missing_vulkan_libs.append(arch)
                 logger.error("%s %s missing (needed by %s)", arch, lib, req.lower())
+
+    if missing_vulkan_libs:
+        setting = "dismiss-missing-vulkan-library-warning"
+        if settings.read_setting(setting) != "True":
+            DontShowAgainDialog(
+                setting,
+                "Missing vulkan libraries",
+                secondary_message="The Vulkan library for %s has not been found. "
+                "This will prevent games using Vulkan (such as DXVK games) from running. "
+                "To install it, please follow "
+                "<a href='https://github.com/lutris/lutris/wiki/Installing-drivers'>"
+                "the instructions on our Wiki</a>"
+                % " and ".join(missing_vulkan_libs)
+            )
 
 
 def check_vulkan():
@@ -118,18 +134,18 @@ def check_vulkan():
 def check_donate():
     setting = "dont-support-lutris"
     if settings.read_setting(setting) != "True":
-        open_uri("https://lutris.net/donate")
         DontShowAgainDialog(
             setting,
             "Please support Lutris!",
             secondary_message="Lutris is entirely funded by its community and will "
             "remain an independent gaming platform.\n"
             "For Lutris to survive and grow, the project needs your help.\n"
-            "Please consider making a donation if you can, this will greatly help "
-            "covering the costs of hosting the project and funding new features "
-            " like cloud saves or a full-screen interface for the TV!\n"
+            "Please consider making a donation if you can. This will greatly help "
+            "cover the costs of hosting the project and fund new features "
+            "like cloud saves or a full-screen interface for the TV!\n"
             "<a href='https://lutris.net/donate'>SUPPORT US! https://lutris.net/donate</a>"
         )
+
 
 def fill_missing_platforms():
     """Sets the platform on games where it's missing.

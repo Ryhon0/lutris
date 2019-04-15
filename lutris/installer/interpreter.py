@@ -191,6 +191,17 @@ class ScriptInterpreter(CommandsMixin):
             return True
         return False
 
+    @property
+    def script_env(self):
+        """Return the script's own environment variable with values
+        susbtituted. This value can be used to provide the same environment
+        variable as set for the game during the install process.
+        """
+        return {
+            key: self._substitute(value) for key, value in
+            self.script.get('system', {}).get('env', {}).items()
+        }
+
     # --------------------------
     # "Initial validation" stage
     # --------------------------
@@ -312,12 +323,14 @@ class ScriptInterpreter(CommandsMixin):
         if not installer_file_id:
             raise ScriptingError("Could not match a GOG installer file in the files")
 
+        file_id_provided = False  # Only assign installer_file_id once
         for index, link in enumerate(links):
 
             filename = link.split("?")[0].split("/")[-1]
 
-            if filename.lower().endswith((".exe", ".sh")):
+            if filename.lower().endswith((".exe", ".sh")) and not file_id_provided:
                 file_id = installer_file_id
+                file_id_provided = True
             else:
                 file_id = "gog_file_%s" % index
 
@@ -491,7 +504,7 @@ class ScriptInterpreter(CommandsMixin):
         if not file_path or not os.path.exists(file_path):
             raise ScriptingError("Can't continue installation without file", file_id)
         self.game_files[file_id] = file_path
-        self.prepare_game_files()
+        self.iter_game_files()
 
     # ---------------
     # "Commands" stage
@@ -863,7 +876,7 @@ class ScriptInterpreter(CommandsMixin):
         self.game_files[self.steam_data["file_id"]] = os.path.abspath(
             os.path.join(data_path, self.steam_data["steam_rel_path"])
         )
-        self.prepare_game_files()
+        self.iter_game_files()
 
     def _download_steam_data(self, file_uri, file_id):
         """Download the game files from Steam to use them outside of Steam.

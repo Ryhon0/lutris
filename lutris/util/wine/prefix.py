@@ -21,6 +21,7 @@ class WinePrefixManager:
     def setup_defaults(self):
         """Sets the defaults for newly created prefixes"""
         self.override_dll("winemenubuilder.exe", "")
+        self.override_dll("steamwebhelper.exe", "")
         try:
             self.desktop_integration()
         except OSError as ex:
@@ -127,7 +128,8 @@ class WinePrefixManager:
         if enabled:
             self.set_registry_key(path, "Desktop", "WineDesktop")
             default_resolution = "x".join(DISPLAY_MANAGER.get_current_resolution())
-            logger.debug("Enabling wine virtual desktop with default resolution of %s", default_resolution)
+            logger.debug("Enabling wine virtual desktop with default resolution of %s",
+                         default_resolution)
             self.set_registry_key(
                 self.hkcu_prefix + "/Software/Wine/Explorer/Desktops",
                 "WineDesktop",

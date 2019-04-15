@@ -18,7 +18,6 @@ from lutris.util.wine.prefix import WinePrefixManager
 from lutris.util.wine.x360ce import X360ce
 from lutris.util.wine import dxvk
 from lutris.util.wine.wine import (
-    PROTON_PATH,
     POL_PATH,
     WINE_DIR,
     WINE_PATHS,
@@ -28,6 +27,7 @@ from lutris.util.wine.wine import (
     esync_display_version_warning,
     get_default_version,
     get_overrides_env,
+    get_proton_paths,
     get_real_executable,
     get_system_wine_version,
     get_wine_versions,
@@ -38,7 +38,6 @@ from lutris.runners.commands.wine import (  # noqa pylint: disable=unused-import
     create_prefix,
     delete_registry_key,
     eject_disc,
-    joycpl,
     set_regedit,
     set_regedit_file,
     winecfg,
@@ -105,6 +104,7 @@ class wine(Runner):
         "MouseWarpOverride": r"%s/DirectInput" % reg_prefix,
         "OffscreenRenderingMode": r"%s/Direct3D" % reg_prefix,
         "StrictDrawOrdering": r"%s/Direct3D" % reg_prefix,
+        "SampleCount": r"%s/Direct3D" % reg_prefix,
         "Desktop": "MANAGED",
         "WineDesktop": "MANAGED",
         "ShowCrashDialog": "MANAGED",
@@ -347,6 +347,27 @@ class wine(Runner):
                 ),
             },
             {
+                "option": "SampleCount",
+                "label": "Anti-aliasing Sample Count",
+                "type": "choice",
+                "choices": [
+                    ("0", "0 (disabled)"),
+                    ("2", "2"),
+                    ("4", "4"),
+                    ("8", "8"),
+                    ("16", "16")
+                ],
+                "default": "0",
+                "advanced": True,
+                "help": (
+                    "Override swapchain sample count. It can be used to force enable multisampling "
+                    "with applications that otherwise don't support it, like the similar control "
+                    "panel setting available with some GPU drivers. This one might work in more "
+                    "cases than the driver setting though. "
+                    "Not all applications are compatible with all sample counts. "
+                )
+            },
+            {
                 "option": "UseXVidMode",
                 "label": "Use XVidMode to switch resolutions",
                 "type": "bool",
@@ -438,6 +459,7 @@ class wine(Runner):
 
     @property
     def context_menu_entries(self):
+        """Return the contexual menu entries for wine"""
         menu_entries = [
             ("wineexec", "Run EXE inside wine prefix", self.run_wineexec)
         ]
@@ -447,21 +469,27 @@ class wine(Runner):
             ("wine-regedit", "Wine registry", self.run_regedit),
             ("winekill", "Kill all wine processes", self.run_winekill),
             ("winetricks", "Winetricks", self.run_winetricks),
-            ("joycpl", "Joystick Control Panel", self.run_joycpl),
+            ("winecpl", "Wine Control Panel", self.run_winecpl),
         ]
         return menu_entries
 
     @property
     def prefix_path(self):
-        prefix_path = self.game_config.get("prefix")
-        if not prefix_path:
-            prefix_path = os.environ.get("WINEPREFIX") or "~/.wine"
-        return os.path.expanduser(prefix_path)
+        """Return the absolute path of the Wine prefix"""
+        _prefix_path = self.game_config.get("prefix")
+        if not _prefix_path:
+            logger.warning("Wine prefix not provided, defaulting to $WINEPREFIX then ~/.wine."
+                           " This is probably not the intended behavior.")
+            _prefix_path = os.environ.get("WINEPREFIX") or "~/.wine"
+        return os.path.expanduser(_prefix_path)
 
     @property
     def game_exe(self):
         """Return the game's executable's path."""
-        exe = self.game_config.get("exe") or ""
+        exe = self.game_config.get("exe")
+        if not exe:
+            logger.warning("The game doesn't have an executabe")
+            return
         if exe and os.path.isabs(exe):
             return exe
         if not self.game_path:
@@ -500,10 +528,14 @@ class wine(Runner):
             return get_default_version()
 
     def get_path_for_version(self, version):
+        """Return the absolute path of a wine executable for a given version"""
+        # logger.debug("Getting path for Wine %s", version)
         if version in WINE_PATHS.keys():
             return system.find_executable(WINE_PATHS[version])
         if "Proton" in version:
-            return os.path.join(PROTON_PATH, version, "dist/bin/wine")
+            for proton_path in get_proton_paths():
+                if os.path.isfile(os.path.join(proton_path, version, "dist/bin/wine")):
+                    return os.path.join(proton_path, version, "dist/bin/wine")
         if version.startswith("PlayOnLinux"):
             version, arch = version.split()[1].rsplit("-", 1)
             return os.path.join(POL_PATH, "wine", "linux-" + arch, version, "bin/wine")
@@ -614,9 +646,14 @@ class wine(Runner):
             "", prefix=self.prefix_path, wine_path=self.get_executable(), config=self
         )
 
-    def run_joycpl(self, *args):
+    def run_winecpl(self, *args):
+        """Execute Wine control panel."""
         self.prelaunch()
-        joycpl(prefix=self.prefix_path, wine_path=self.get_executable(), config=self)
+        wineexec(
+            "control",
+            prefix=self.prefix_path,
+            wine_path=self.get_executable()
+        )
 
     def run_winekill(self, *args):
         """Runs wineserver -k."""
@@ -631,8 +668,7 @@ class wine(Runner):
 
     def set_regedit_keys(self):
         """Reset regedit keys according to config."""
-        prefix = self.prefix_path
-        prefix_manager = WinePrefixManager(prefix)
+        prefix_manager = WinePrefixManager(self.prefix_path)
         # Those options are directly changed with the prefix manager and skip
         # any calls to regedit.
         managed_keys = {
@@ -653,6 +689,10 @@ class wine(Runner):
                         value = None
                     managed_keys[key](value)
                     continue
+                # Convert numeric strings to integers so they are saved as dword
+                if value.isdigit():
+                    value = int(value)
+
                 prefix_manager.set_registry_key(path, key, value)
 
     def toggle_dxvk(self, enable, version=None):
@@ -671,7 +711,9 @@ class wine(Runner):
 
         if enable:
             for dll in dxvk_manager.dxvk_dlls:
-                self.dll_overrides[dll] = "n"
+                # We have to make sure that the dll exists before setting it to native
+                if dxvk_manager.dxvk_dll_exists(dll):
+                    self.dll_overrides[dll] = "n"
 
     def prelaunch(self):
         if not system.path_exists(os.path.join(self.prefix_path, "user.reg")):
@@ -735,10 +777,12 @@ class wine(Runner):
     def get_runtime_env(self):
         """Return runtime environment variables with path to wine for Lutris builds"""
         wine_path = self.get_executable()
-        if WINE_DIR or PROTON_PATH in wine_path:
+        wine_root = None
+        if WINE_DIR:
             wine_root = os.path.dirname(os.path.dirname(wine_path))
-        else:
-            wine_root = None
+        for proton_path in get_proton_paths():
+            if proton_path in wine_path:
+                wine_root = os.path.dirname(os.path.dirname(wine_path))
         if "-4." in wine_path or "/4." in wine_path:
             version = "Ubuntu-18.04"
         else:

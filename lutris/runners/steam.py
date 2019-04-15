@@ -165,16 +165,22 @@ class steam(Runner):
 
     @property
     def game_path(self):
-        for apps_path in self.get_steamapps_dirs():
-            game_path = get_path_from_appmanifest(apps_path, self.appid)
-            if game_path:
-                return game_path
-        logger.info("Data path for SteamApp %s not found.", self.appid)
+        if self.appid:
+            for apps_path in self.get_steamapps_dirs():
+                game_path = get_path_from_appmanifest(apps_path, self.appid)
+                if game_path:
+                    return game_path
+            logger.info("Data path for SteamApp %s not found.", self.appid)
 
     @property
     def steam_data_dir(self):
         """Return dir where Steam files lie."""
-        candidates = ("~/.steam", "~/.local/share/steam", "~/.steam/steam")
+        candidates = (
+            "~/.steam",
+            "~/.local/share/steam",
+            "~/.steam/steam",
+            "~/.var/app/com.valvesoftware.Steam/data/steam",
+        )
         for candidate in candidates:
             path = system.fix_path_case(
                 os.path.join(os.path.expanduser(candidate), "SteamApps")
@@ -234,6 +240,11 @@ class steam(Runner):
             main_dir = system.fix_path_case(main_dir)
             if main_dir and os.path.isdir(main_dir):
                 dirs.append(main_dir)
+        if self.steam_data_dir:
+            ct_dir = os.path.join(self.steam_data_dir, "compatibilitytools.d")
+            ct_dir = system.fix_path_case(ct_dir)
+            if ct_dir and os.path.isdir(ct_dir):
+                dirs.append(ct_dir)
         # Custom dirs
         steam_config = self.get_steam_config()
         if steam_config:
