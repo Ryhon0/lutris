@@ -17,7 +17,9 @@ from lutris.util.system import path_exists
 from lutris.util.log import logger
 from lutris.util import xdgshortcuts
 from lutris import ipc
-
+from lutris.util import resources
+from lutris import settings
+from lutris.gui.dialogs import ErrorDialog
 
 class GameActions:
     """Regroup a list of callbacks for a game"""
@@ -26,9 +28,16 @@ class GameActions:
         self.window = window
         self.game_id = None
         self._game = None
-        self.rpcclient = ipc.DiscordIPC('558752714079731714')
-        self.rpcclient.connect()
-        self.rpcclient.update_activity({})
+        self.rpcclient = ipc.DiscordIPC()
+        if self._get_discord_enabled():
+            self.rpcclient.set_app_name('Lutris')
+            self.rpcclient.connect()
+            self.rpcclient.update_activity({})
+
+    def _get_discord_enabled(self):
+        enabled = settings.read_setting("discord_enabled")
+        if enabled is None: return False
+        else: return enabled
 
     @property
     def game(self):
@@ -159,18 +168,27 @@ class GameActions:
 
     def on_game_run(self, *_args):
         """Launch a game"""
-        activity = {
-            #'details': 'Details',
-            'state': 'Playing {0}'.format(self.game.name),
-            'timestamps': {'start': calendar.timegm(time.gmtime())},
-            'assets': {
-                'small_image': self.game.runner_name.lower().replace(' ', '-'),
-                'small_text': self.game.runner_name,
-                'large_image': self.game.name.lower().replace(' ', '-'),
-                'large_text': self.game.name
+        if self._get_discord_enabled():
+            assets = self.rpcclient.getAssetList()
+            if not self.rpcclient.doesAssetExists(assets, "runner-" + self.game.runner_name):
+                ErrorDialog('Please add an image for "runner-' + self.game.runner_name+ '" in your Discord application')
+            if not self.rpcclient.doesAssetExists(assets, self.game.id): 
+                self.rpcclient.addAsset(self.game.id, resources.get_icon_path(self.game.slug))
+            self.rpcclient.disconnect()
+            self.rpcclient.set_app_name(self.game.name)
+            self.rpcclient.connect()
+            activity = {
+                #'details': 'Details',
+                'state': 'Playing with Lutirs',
+                'timestamps': {'start': calendar.timegm(time.gmtime())},
+                'assets': {
+                    'small_image': 'runner-' + self.game.runner_name,
+                    'small_text': self.game.runner_name,
+                    'large_image': str(self.game.id),
+                    'large_text': self.game.name
+                    }
                 }
-            }
-        self.rpcclient.update_activity(activity)
+            self.rpcclient.update_activity(activity)
         self.application.launch(self.game)
 
 
@@ -183,7 +201,11 @@ class GameActions:
     def on_stop(self, caller):
         """Stops the game"""
 
-        self.rpcclient.update_activity({})
+        if self._get_discord_enabled():
+            self.rpcclient.disconnect()
+            self.rpcclient.set_app_name("Lutris")
+            self.rpcclient.connect()
+            self.rpcclient.update_activity({})
         matched_game = self.get_running_game()
         if not matched_game:
             logger.warning("%s not in running game list", self.game_id)
