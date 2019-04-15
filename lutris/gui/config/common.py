@@ -20,7 +20,6 @@ from lutris.gui.widgets.utils import (
 from lutris.util.strings import slugify
 from lutris.util import resources
 
-
 # pylint: disable=too-many-instance-attributes
 class GameDialogCommon:
     """Mixin for config dialogs"""
@@ -70,6 +69,7 @@ class GameDialogCommon:
             self._build_runner_tab(config_level)
         if config_level == "system":
             self._build_prefs_tab()
+            self._build_discord_tab()
         self._build_system_tab(config_level)
 
     def _build_info_tab(self):
@@ -106,6 +106,92 @@ class GameDialogCommon:
 
         info_sw = self.build_scrolled_window(prefs_box)
         self._add_notebook_tab(info_sw, "Lutris preferences")
+
+    def _build_discord_tab(self):
+        prefs_box = VBox()
+        prefs_box.pack_start(self._get_discord_enabled_box(), False, False, 6)
+        prefs_box.pack_start(self._get_discord_key_box(), False, False, 6)
+        prefs_box.pack_start(self._get_discord_app_box(), False, False, 6)
+        
+        info_sw = self.build_scrolled_window(prefs_box)
+        self._add_notebook_tab(info_sw, "Discord preferences")
+
+    def _get_discord_enabled_box(self):
+        box = Gtk.CheckButton(label="Enable Discord RPC")
+        box.set_active(self._get_discord_enabled())
+        box.connect("toggled", self._on_enabled_toggled)
+        return box
+
+    def _get_discord_enabled(self):
+        enabled = settings.read_setting("discord_enabled")
+        if enabled is None: return False
+        else: return enabled
+
+    def _on_enabled_toggled(self, box):
+        if self.timer_id:
+            GLib.source_remove(self.timer_id)
+
+        self.timer_id = GLib.timeout_add(1000, self.save_enabled_setting, box.get_active())
+
+    def save_enabled_setting(self, value):
+        settings.write_setting("discord_enabled", value)
+        #if value is None or False: GameActions.rpcclient.disconnect()
+        #else: GameActions.rpcclient.connect()
+        GLib.source_remove(self.timer_id)
+        self.timer_id = None
+        return False
+
+    def _get_discord_appid(self):
+        appid = settings.read_setting("discord_appid")
+        if appid: return appid
+        else: return ""
+
+    def _get_discord_token(self):
+        token = settings.read_setting("discord_token")
+        if token: return token
+        else: return ""
+
+    def _get_discord_key_box(self):
+        box = Gtk.Box(spacing=12, margin_right=12, margin_left=12)
+        label = Label("API key")
+        box.pack_start(label, False, False, 0)
+        self.name_entry = Gtk.Entry()
+        self.name_entry.set_text(self._get_discord_token())
+        box.pack_start(self.name_entry, True, True, 0)
+        self.name_entry.connect("changed", self._on_token_set)
+        return box
+
+    def _on_token_set(self, entry):
+        if self.timer_id:
+            GLib.source_remove(self.timer_id)
+        self.timer_id = GLib.timeout_add(1000, self.save_token_setting, entry.get_text())
+
+    def save_token_setting(self, value):
+        settings.write_setting("discord_token", value)
+        GLib.source_remove(self.timer_id)
+        self.timer_id = None
+        return False
+
+    def _get_discord_app_box(self):
+        box = Gtk.Box(spacing=12, margin_right=12, margin_left=12)
+        label = Label("Application ID")
+        box.pack_start(label, False, False, 0)
+        self.name_entry = Gtk.Entry()
+        self.name_entry.set_text(self._get_discord_appid())
+        box.pack_start(self.name_entry, True, True, 0)
+        self.name_entry.connect("changed", self._on_application_set)
+        return box
+
+    def _on_application_set(self, entry):
+        if self.timer_id:
+            GLib.source_remove(self.timer_id)
+        self.timer_id = GLib.timeout_add(1000, self.save_application_setting, entry.get_text())
+
+    def save_application_setting(self, value):
+        settings.write_setting("discord_appid", value)
+        GLib.source_remove(self.timer_id)
+        self.timer_id = None
+        return False
 
     def _get_game_cache_box(self):
         box = Gtk.Box(spacing=12, margin_right=12, margin_left=12)
