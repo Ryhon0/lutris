@@ -11,7 +11,7 @@ Example:
 .. image:: rich-presence.jpg
    :width: 40pt
 
-TODO: upload the game and runner icon automatically with the use of user tokens
+TODO: remove art assets when they hit the limit
 
 Lutris is an open source gaming platform that makes gaming on Linux easier by
 managing, installing and providing optimal settings for games.
